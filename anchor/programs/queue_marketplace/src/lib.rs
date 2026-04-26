@@ -12,6 +12,20 @@ pub mod queue_marketplace {
         let event_state = &mut ctx.accounts.event_state;
         let clock = Clock::get()?;
 
+        // Transfer rent-exempt amount to the spot account
+        let spot_rent = Rent::get()?.minimum_balance(8 + QueueSpot::SIZE);
+        let event_rent = Rent::get()?.minimum_balance(8 + EventState::SIZE);
+
+        // Transfer rent for spot account
+        **ctx.accounts.fee_payer.to_account_info().try_borrow_mut_lamports()? -= spot_rent;
+        **spot.to_account_info().try_borrow_mut_lamports()? += spot_rent;
+
+        // Transfer rent for event_state account if it's being created
+        if event_state.event_id == [0; 32] {
+            **ctx.accounts.fee_payer.to_account_info().try_borrow_mut_lamports()? -= event_rent;
+            **event_state.to_account_info().try_borrow_mut_lamports()? += event_rent;
+        }
+
         spot.owner = ctx.accounts.owner.key();
         spot.queue_position = event_state.next_position;
         spot.created_at = clock.unix_timestamp;
@@ -73,9 +87,11 @@ pub mod queue_marketplace {
 pub struct MintSpot<'info> {
     #[account(mut)]
     pub owner: Signer<'info>,
+    #[account(mut)]
+    pub fee_payer: Signer<'info>,
     #[account(
         init,
-        payer = owner,
+        payer = fee_payer,
         space = 8 + QueueSpot::SIZE,
         seeds = [b"spot", owner.key().as_ref(), event_id.as_ref()],
         bump
@@ -83,7 +99,7 @@ pub struct MintSpot<'info> {
     pub spot: Account<'info, QueueSpot>,
     #[account(
         init_if_needed,
-        payer = owner,
+        payer = fee_payer,
         space = 8 + EventState::SIZE,
         seeds = [b"event", event_id.as_ref()],
         bump
