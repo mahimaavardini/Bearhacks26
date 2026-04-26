@@ -27,7 +27,6 @@ export const mintSpotTx = async (
   connection: Connection,
   sendTransaction: (transaction: Transaction, connection: Connection) => Promise<string>,
   wallet: PublicKey,
-  feePayer: PublicKey,
   programId: PublicKey,
   eventId: Uint8Array,
 ): Promise<string> => {
@@ -38,7 +37,6 @@ export const mintSpotTx = async (
     programId,
     keys: [
       { pubkey: wallet, isSigner: true, isWritable: true },
-      { pubkey: feePayer, isSigner: true, isWritable: true },
       { pubkey: spot, isSigner: false, isWritable: true },
       { pubkey: eventState, isSigner: false, isWritable: true },
       { pubkey: SystemProgram.programId, isSigner: false, isWritable: false },

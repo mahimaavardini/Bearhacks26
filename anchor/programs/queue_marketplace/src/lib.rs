@@ -73,11 +73,9 @@ pub mod queue_marketplace {
 pub struct MintSpot<'info> {
     #[account(mut)]
     pub owner: Signer<'info>,
-    #[account(mut)]
-    pub fee_payer: Signer<'info>,
     #[account(
         init,
-        payer = fee_payer,
+        payer = owner,
         space = 8 + QueueSpot::SIZE,
         seeds = [b"spot", owner.key().as_ref(), event_id.as_ref()],
         bump
@@ -85,7 +83,7 @@ pub struct MintSpot<'info> {
     pub spot: Account<'info, QueueSpot>,
     #[account(
         init_if_needed,
-        payer = fee_payer,
+        payer = owner,
         space = 8 + EventState::SIZE,
         seeds = [b"event", event_id.as_ref()],
         bump

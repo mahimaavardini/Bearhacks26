@@ -166,7 +166,7 @@ export default function App() {
 
     try {
       setTxStatus('Submitting mint_spot...');
-      const signature = await mintSpotTx(connection, wallet.sendTransaction, wallet.publicKey, wallet.publicKey, programId!, EVENT_ID_BYTES);
+      const signature = await mintSpotTx(connection, wallet.sendTransaction, wallet.publicKey, programId!, EVENT_ID_BYTES);
       await connection.confirmTransaction(signature, CONFIRMATION_LEVEL);
       setTxStatus('Joined queue successfully.');
     } catch (error) {

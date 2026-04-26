@@ -4,7 +4,6 @@ import { Buffer } from 'buffer';
 import { ConnectionProvider, WalletProvider } from '@solana/wallet-adapter-react';
 import { WalletModalProvider } from '@solana/wallet-adapter-react-ui';
 import { SolflareWalletAdapter } from '@solana/wallet-adapter-solflare';
-import { DEVNET_ENDPOINT } from './lib/constants';
 import './index.css';
 import App from './App';
 
