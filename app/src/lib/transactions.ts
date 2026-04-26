@@ -37,7 +37,7 @@ export const mintSpotTx = async (
   const ix = new TransactionInstruction({
     programId,
     keys: [
-      { pubkey: wallet, isSigner: true, isWritable: false },
+      { pubkey: wallet, isSigner: true, isWritable: true },
       { pubkey: feePayer, isSigner: true, isWritable: true },
       { pubkey: spot, isSigner: false, isWritable: true },
       { pubkey: eventState, isSigner: false, isWritable: true },

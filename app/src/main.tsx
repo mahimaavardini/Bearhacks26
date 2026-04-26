@@ -15,7 +15,7 @@ const wallets = [new SolflareWalletAdapter()];
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
-    <ConnectionProvider endpoint={DEVNET_ENDPOINT}>
+    <ConnectionProvider endpoint="https://api.devnet.solana.com">
       <WalletProvider wallets={wallets} autoConnect>
         <WalletModalProvider>
           <App />
