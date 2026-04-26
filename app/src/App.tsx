@@ -301,7 +301,7 @@ export default function App() {
             type="button"
             onClick={() => setActiveTab('buy')}
             className={`h-12 text-base font-semibold ${
-              activeTab === 'buy' ? 'bg-[#2E4057] text-[#CAFFB9]' : 'bg-[#CAFFB9] text-[#66A182]'
+              activeTab === 'buy' ? 'bg-[#2E4057] text-[#CAFFB9]' : 'bg-[#CAFFB9] text-[#2E4057]'
             }`}
           >
             Buy
@@ -310,7 +310,7 @@ export default function App() {
             type="button"
             onClick={() => setActiveTab('sell')}
             className={`h-12 text-base font-semibold ${
-              activeTab === 'sell' ? 'bg-[#2E4057] text-[#CAFFB9]' : 'bg-[#CAFFB9] text-[#66A182]'
+              activeTab === 'sell' ? 'bg-[#2E4057] text-[#CAFFB9]' : 'bg-[#CAFFB9] text-[#2E4057]'
             }`}
           >
             Sell
