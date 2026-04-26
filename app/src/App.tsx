@@ -110,22 +110,20 @@ export default function App() {
   const { connection } = useConnection();
   const wallet = useWallet();
   const [spots, setSpots] = useState<QueueSpot[]>([]);
-  const [programIdText, setProgramIdText] = useState(PROGRAM_ID);
-  const [eventIdBytes, setEventIdBytes] = useState(EVENT_ID_BYTES);
-  const [qrPayloadInput, setQrPayloadInput] = useState('');
   const [activeTab, setActiveTab] = useState<'buy' | 'sell'>('buy');
   const [balanceSol, setBalanceSol] = useState(0);
   const [sellInput, setSellInput] = useState('0.1');
   const [txStatus, setTxStatus] = useState<string>('');
   const [buyTarget, setBuyTarget] = useState<QueueSpot | null>(null);
 
+  // Use hardcoded event details
   const programId = useMemo(() => {
     try {
-      return new PublicKey(programIdText);
+      return new PublicKey(PROGRAM_ID);
     } catch {
       return null;
     }
-  }, [programIdText]);
+  }, []);
 
   const publicKey = wallet.publicKey?.toBase58();
   const isWalletConnected = wallet.connected || Boolean(publicKey);
@@ -134,28 +132,7 @@ export default function App() {
     .filter((spot) => spot.isSelling && spot.owner !== publicKey)
     .sort((a, b) => a.queuePosition - b.queuePosition);
 
-  useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    const payloadText = params.get('payload');
 
-    if (!payloadText) return;
-
-    try {
-      const decoded = decodeURIComponent(payloadText);
-      const parsed = JSON.parse(decoded) as { programId: string; eventId: number[] };
-      const nextProgram = new PublicKey(parsed.programId);
-      const nextEvent = Uint8Array.from(parsed.eventId);
-      if (nextEvent.length !== 32) {
-        throw new Error('Event ID must be 32 bytes');
-      }
-      setProgramIdText(nextProgram.toBase58());
-      setEventIdBytes(nextEvent);
-      setQrPayloadInput(JSON.stringify(parsed, null, 2));
-      setTxStatus('Loaded event from QR payload. Connect your wallet to continue.');
-    } catch {
-      // Ignore invalid URL payload and continue with defaults.
-    }
-  }, []);
 
   useEffect(() => {
     if (!programId) {
@@ -164,14 +141,14 @@ export default function App() {
     }
 
     const load = async () => {
-      const data = await fetchEventSpots(connection, programId, eventIdBytes);
+      const data = await fetchEventSpots(connection, programId, EVENT_ID_BYTES);
       setSpots(data);
     };
 
     void load();
     const timer = window.setInterval(() => void load(), 5000);
     return () => window.clearInterval(timer);
-  }, [connection, eventIdBytes, programId]);
+  }, [connection, programId]);
 
   useEffect(() => {
     if (!wallet.publicKey) return;
@@ -182,11 +159,6 @@ export default function App() {
   }, [connection, wallet.publicKey, spots]);
 
   const handleJoin = async () => {
-    if (!programId) {
-      setTxStatus('Invalid event details. Paste the QR payload or scan again to load the event.');
-      return;
-    }
-
     if (!wallet.publicKey) {
       setTxStatus('Please connect your wallet before joining the queue.');
       return;
@@ -194,15 +166,17 @@ export default function App() {
 
     try {
       setTxStatus('Submitting mint_spot...');
-      const signature = await mintSpotTx(connection, wallet.sendTransaction, wallet.publicKey, wallet.publicKey, programId, eventIdBytes);
+      const signature = await mintSpotTx(connection, wallet.sendTransaction, wallet.publicKey, wallet.publicKey, programId!, EVENT_ID_BYTES);
       await connection.confirmTransaction(signature, CONFIRMATION_LEVEL);
       setTxStatus('Joined queue successfully.');
     } catch (error) {
-      setTxStatus(`Join failed: ${(error as Error).message}`);
+      const errorMsg = (error as Error).message || String(error);
+      setTxStatus(`Join failed: ${errorMsg}`);
+      console.error('Join error:', error);
       return;
     }
 
-    const data = await fetchEventSpots(connection, programId, eventIdBytes);
+    const data = await fetchEventSpots(connection, programId!, EVENT_ID_BYTES);
     setSpots(data);
   };
 
@@ -224,7 +198,9 @@ export default function App() {
       await connection.confirmTransaction(signature, CONFIRMATION_LEVEL);
       setTxStatus('Spot listed.');
     } catch (error) {
-      setTxStatus(`Listing failed: ${(error as Error).message}`);
+      const errorMsg = (error as Error).message || String(error);
+      setTxStatus(`Listing failed: ${errorMsg}`);
+      console.error('Listing error:', error);
       return;
     }
 
@@ -253,7 +229,9 @@ export default function App() {
       await connection.confirmTransaction(signature, CONFIRMATION_LEVEL);
       setTxStatus('Swap complete.');
     } catch (error) {
-      setTxStatus(`Swap failed: ${(error as Error).message}`);
+      const errorMsg = (error as Error).message || String(error);
+      setTxStatus(`Swap failed: ${errorMsg}`);
+      console.error('Swap error:', error);
       return;
     }
 
@@ -274,21 +252,6 @@ export default function App() {
     setBuyTarget(null);
   };
 
-  const handleApplyQrPayload = () => {
-    try {
-      const parsed = JSON.parse(qrPayloadInput) as { programId: string; eventId: number[] };
-      const nextProgram = new PublicKey(parsed.programId);
-      const nextEvent = Uint8Array.from(parsed.eventId);
-      if (nextEvent.length !== 32) {
-        throw new Error('Event ID must be 32 bytes');
-      }
-      setProgramIdText(nextProgram.toBase58());
-      setEventIdBytes(nextEvent);
-      setTxStatus('Queue context updated from QR payload.');
-    } catch (error) {
-      setTxStatus(`Invalid QR payload: ${(error as Error).message}`);
-    }
-  };
 
   return (
     <main className="min-h-screen bg-[#2E4057] text-[#CAFFB9]">
@@ -307,48 +270,29 @@ export default function App() {
             <p className="mb-3 font-semibold">Connect your wallet to join the queue.</p>
             <WalletMultiButton className="!mt-2 !h-12 !min-w-[180px] !rounded-md !bg-[#2E4057] !text-[#CAFFB9]" />
             <a
-              href="https://phantom.app/"
+              href="https://solflare.com/"
               target="_blank"
               rel="noreferrer"
               className="mt-2 text-xs font-semibold underline"
             >
-              Need Phantom? Open phantom.app
+              Need Solflare? Open solflare.com
             </a>
-            <div className="mt-4 w-full rounded-md border border-[#2E4057] bg-[#2E4057]/10 p-3 text-left text-xs text-[#2E4057]">
-              <p className="font-semibold">Event QR payload</p>
-              <p className="mt-1 mb-2 text-[11px] text-[#2E4057]/80">
-                If you scanned a QR code, paste the payload JSON here and click Apply. Then connect your wallet and join.
-              </p>
-              <textarea
-                value={qrPayloadInput}
-                onChange={(event) => setQrPayloadInput(event.target.value)}
-                placeholder="Paste scanned QR payload JSON"
-                className="h-24 w-full rounded-md border border-[#2E4057] bg-[#CAFFB9] p-2 text-xs text-[#2E4057] outline-none"
-              />
-              <button
-                type="button"
-                onClick={handleApplyQrPayload}
-                className="mt-2 h-12 w-full rounded-md border-2 border-[#2E4057] bg-[#CAFFB9] font-semibold text-[#2E4057]"
-              >
-                Apply QR Payload
-              </button>
-            </div>
             <button
               type="button"
               onClick={handleJoin}
-              disabled={!programId || !isWalletConnected}
-              className={`mt-3 h-12 w-full rounded-md border border-[#2E4057] font-semibold ${
-                !programId || !isWalletConnected
+              disabled={!isWalletConnected}
+              className={`mt-4 h-12 w-full rounded-md border border-[#2E4057] font-semibold ${
+                !isWalletConnected
                   ? 'bg-[#9CA9A0] text-[#5C635C] cursor-not-allowed'
                   : 'bg-[#CAFFB9] text-[#2E4057]'
               }`}
             >
               {isWalletConnected ? 'Join Queue' : 'Connect Wallet First'}
             </button>
-            {txStatus && <p className="mt-2 text-xs">{txStatus}</p>}
+            {txStatus && <p className="mt-3 max-h-24 overflow-y-auto text-xs whitespace-pre-wrap">{txStatus}</p>}
           </div>
         )}
-        <QueueScene spots={spots} you={yourSpot} eventId={eventIdBytes} />
+        <QueueScene spots={spots} you={yourSpot} eventId={EVENT_ID_BYTES} />
       </section>
 
       <section className="min-h-[40vh] rounded-t-2xl bg-[#CAFFB9] px-4 py-4 text-[#2E4057]">
