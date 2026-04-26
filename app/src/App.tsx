@@ -284,6 +284,14 @@ export default function App() {
             <p className="mb-3 font-semibold">Scan the event QR code to join the queue.</p>
             <QRCodeSVG value={eventQrPayload} bgColor="#CAFFB9" fgColor="#2E4057" />
             <WalletMultiButton className="!mt-4 !h-12 !min-w-[180px] !rounded-md !bg-[#2E4057] !text-[#CAFFB9]" />
+            <a
+              href="https://phantom.app/"
+              target="_blank"
+              rel="noreferrer"
+              className="mt-2 text-xs font-semibold underline"
+            >
+              Need Phantom? Open phantom.app
+            </a>
             <textarea
               value={qrPayloadInput}
               onChange={(event) => setQrPayloadInput(event.target.value)}
