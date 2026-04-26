@@ -1,5 +1,5 @@
 use anchor_lang::prelude::*;
-use anchor_lang::system_program::{self, Transfer};
+use anchor_lang::system_program;
 
 declare_id!("DHNLLb8p9kSFg8AzVzXAVmkHVkcb8yDM3xMz9iXALcv1");
 
@@ -11,20 +11,6 @@ pub mod queue_marketplace {
         let spot = &mut ctx.accounts.spot;
         let event_state = &mut ctx.accounts.event_state;
         let clock = Clock::get()?;
-
-        // Transfer rent-exempt amount to the spot account
-        let spot_rent = Rent::get()?.minimum_balance(8 + QueueSpot::SIZE);
-        let event_rent = Rent::get()?.minimum_balance(8 + EventState::SIZE);
-
-        // Transfer rent for spot account
-        **ctx.accounts.fee_payer.to_account_info().try_borrow_mut_lamports()? -= spot_rent;
-        **spot.to_account_info().try_borrow_mut_lamports()? += spot_rent;
-
-        // Transfer rent for event_state account if it's being created
-        if event_state.event_id == [0; 32] {
-            **ctx.accounts.fee_payer.to_account_info().try_borrow_mut_lamports()? -= event_rent;
-            **event_state.to_account_info().try_borrow_mut_lamports()? += event_rent;
-        }
 
         spot.owner = ctx.accounts.owner.key();
         spot.queue_position = event_state.next_position;
