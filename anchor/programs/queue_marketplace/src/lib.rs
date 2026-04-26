@@ -1,5 +1,5 @@
 use anchor_lang::prelude::*;
-use anchor_lang::system_program;
+use anchor_lang::system_program::{self, Transfer};
 
 declare_id!("DHNLLb8p9kSFg8AzVzXAVmkHVkcb8yDM3xMz9iXALcv1");
 
@@ -115,14 +115,14 @@ pub struct ExecuteSwap<'info> {
         mut,
         seeds = [b"spot", buyer.key().as_ref(), buyer_spot.event_id.as_ref()],
         bump,
-        has_one = buyer @ QueueError::Unauthorized
+        constraint = buyer_spot.owner == buyer.key() @ QueueError::Unauthorized
     )]
     pub buyer_spot: Account<'info, QueueSpot>,
     #[account(
         mut,
         seeds = [b"spot", seller.key().as_ref(), seller_spot.event_id.as_ref()],
         bump,
-        has_one = seller @ QueueError::Unauthorized
+        constraint = seller_spot.owner == seller.key() @ QueueError::Unauthorized
     )]
     pub seller_spot: Account<'info, QueueSpot>,
     pub system_program: Program<'info, System>,
