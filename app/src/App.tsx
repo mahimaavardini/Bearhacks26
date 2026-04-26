@@ -4,7 +4,6 @@ import { useConnection, useWallet } from '@solana/wallet-adapter-react';
 import { WalletMultiButton } from '@solana/wallet-adapter-react-ui';
 import { PublicKey } from '@solana/web3.js';
 import { useEffect, useMemo, useState } from 'react';
-import { QRCodeSVG } from 'qrcode.react';
 import { COLORS, EVENT_ID_BYTES, PROGRAM_ID } from './lib/constants';
 import { formatSol, formatWallet, lamportsToSol, solToLamports } from './lib/format';
 import { fetchEventSpots } from './lib/queue';
@@ -127,20 +126,36 @@ export default function App() {
       return null;
     }
   }, [programIdText]);
-  const eventQrPayload = useMemo(
-    () =>
-      JSON.stringify({
-        programId: programIdText,
-        eventId: Array.from(eventIdBytes),
-      }),
-    [eventIdBytes, programIdText],
-  );
 
   const publicKey = wallet.publicKey?.toBase58();
+  const isWalletConnected = wallet.connected || Boolean(publicKey);
   const yourSpot = spots.find((spot) => spot.owner === publicKey);
   const listedSpots = spots
     .filter((spot) => spot.isSelling && spot.owner !== publicKey)
     .sort((a, b) => a.queuePosition - b.queuePosition);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const payloadText = params.get('payload');
+
+    if (!payloadText) return;
+
+    try {
+      const decoded = decodeURIComponent(payloadText);
+      const parsed = JSON.parse(decoded) as { programId: string; eventId: number[] };
+      const nextProgram = new PublicKey(parsed.programId);
+      const nextEvent = Uint8Array.from(parsed.eventId);
+      if (nextEvent.length !== 32) {
+        throw new Error('Event ID must be 32 bytes');
+      }
+      setProgramIdText(nextProgram.toBase58());
+      setEventIdBytes(nextEvent);
+      setQrPayloadInput(JSON.stringify(parsed, null, 2));
+      setTxStatus('Loaded event from QR payload. Connect your wallet to continue.');
+    } catch {
+      // Ignore invalid URL payload and continue with defaults.
+    }
+  }, []);
 
   useEffect(() => {
     if (!programId) {
@@ -167,7 +182,15 @@ export default function App() {
   }, [connection, wallet.publicKey, spots]);
 
   const handleJoin = async () => {
-    if (!wallet.publicKey || !programId) return;
+    if (!programId) {
+      setTxStatus('Invalid event details. Paste the QR payload or scan again to load the event.');
+      return;
+    }
+
+    if (!wallet.publicKey) {
+      setTxStatus('Please connect your wallet before joining the queue.');
+      return;
+    }
 
     try {
       setTxStatus('Submitting mint_spot...');
@@ -281,9 +304,8 @@ export default function App() {
       <section className="h-[45vh] min-h-[300px] px-2 pb-2">
         {!yourSpot && (
           <div className="absolute inset-x-0 top-28 z-20 mx-auto flex w-[90%] max-w-sm flex-col items-center rounded-lg bg-[#CAFFB9] p-4 text-center text-[#2E4057] shadow-lg">
-            <p className="mb-3 font-semibold">Scan the event QR code to join the queue.</p>
-            <QRCodeSVG value={eventQrPayload} bgColor="#CAFFB9" fgColor="#2E4057" />
-            <WalletMultiButton className="!mt-4 !h-12 !min-w-[180px] !rounded-md !bg-[#2E4057] !text-[#CAFFB9]" />
+            <p className="mb-3 font-semibold">Connect your wallet to join the queue.</p>
+            <WalletMultiButton className="!mt-2 !h-12 !min-w-[180px] !rounded-md !bg-[#2E4057] !text-[#CAFFB9]" />
             <a
               href="https://phantom.app/"
               target="_blank"
@@ -292,26 +314,36 @@ export default function App() {
             >
               Need Phantom? Open phantom.app
             </a>
-            <textarea
-              value={qrPayloadInput}
-              onChange={(event) => setQrPayloadInput(event.target.value)}
-              placeholder="Paste scanned QR payload JSON"
-              className="mt-3 h-24 w-full rounded-md border border-[#2E4057] bg-[#CAFFB9] p-2 text-xs text-[#2E4057] outline-none"
-            />
-            <button
-              type="button"
-              onClick={handleApplyQrPayload}
-              className="mt-2 h-12 w-full rounded-md border-2 border-[#2E4057] bg-[#CAFFB9] font-semibold text-[#2E4057]"
-            >
-              Apply QR Payload
-            </button>
+            <div className="mt-4 w-full rounded-md border border-[#2E4057] bg-[#2E4057]/10 p-3 text-left text-xs text-[#2E4057]">
+              <p className="font-semibold">Event QR payload</p>
+              <p className="mt-1 mb-2 text-[11px] text-[#2E4057]/80">
+                If you scanned a QR code, paste the payload JSON here and click Apply. Then connect your wallet and join.
+              </p>
+              <textarea
+                value={qrPayloadInput}
+                onChange={(event) => setQrPayloadInput(event.target.value)}
+                placeholder="Paste scanned QR payload JSON"
+                className="h-24 w-full rounded-md border border-[#2E4057] bg-[#CAFFB9] p-2 text-xs text-[#2E4057] outline-none"
+              />
+              <button
+                type="button"
+                onClick={handleApplyQrPayload}
+                className="mt-2 h-12 w-full rounded-md border-2 border-[#2E4057] bg-[#CAFFB9] font-semibold text-[#2E4057]"
+              >
+                Apply QR Payload
+              </button>
+            </div>
             <button
               type="button"
               onClick={handleJoin}
-              disabled={!programId}
-              className="mt-3 h-12 w-full rounded-md border border-[#2E4057] bg-[#CAFFB9] font-semibold text-[#2E4057]"
+              disabled={!programId || !isWalletConnected}
+              className={`mt-3 h-12 w-full rounded-md border border-[#2E4057] font-semibold ${
+                !programId || !isWalletConnected
+                  ? 'bg-[#9CA9A0] text-[#5C635C] cursor-not-allowed'
+                  : 'bg-[#CAFFB9] text-[#2E4057]'
+              }`}
             >
-              I Scanned - Join Queue
+              {isWalletConnected ? 'Join Queue' : 'Connect Wallet First'}
             </button>
             {txStatus && <p className="mt-2 text-xs">{txStatus}</p>}
           </div>
