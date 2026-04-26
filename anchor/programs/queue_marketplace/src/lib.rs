@@ -1,7 +1,7 @@
 use anchor_lang::prelude::*;
 use anchor_lang::system_program::{self, Transfer};
 
-declare_id!("QuEUe9gEFt6mY7z2fV3wtdJPK1SLVQ3kQW1pQ7fR1uE");
+declare_id!("DHNLLb8p9kSFg8AzVzXAVmkHVkcb8yDM3xMz9iXALcv1");
 
 #[program]
 pub mod queue_marketplace {

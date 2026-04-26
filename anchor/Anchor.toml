@@ -2,8 +2,8 @@
 seeds = false
 skip-lint = false
 
-[programs.localnet]
-queue_marketplace = "QuEUe9gEFt6mY7z2fV3wtdJPK1SLVQ3kQW1pQ7fR1uE"
+[programs.devnet]
+queue_marketplace = "DHNLLb8p9kSFg8AzVzXAVmkHVkcb8yDM3xMz9iXALcv1"
 
 [provider]
 cluster = "Devnet"
