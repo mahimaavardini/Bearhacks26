@@ -11,12 +11,8 @@ import { fetchEventSpots } from './lib/queue';
 import { executeSwapTx, listSpotTx, mintSpotTx } from './lib/transactions';
 import type { QueueSpot, QueueViewSpot } from './types/queue';
 
-const EVENT_QR_PAYLOAD = JSON.stringify({
-  programId: PROGRAM_ID,
-  eventId: Array.from(EVENT_ID_BYTES),
-});
-
 const SLOT_X = [-3.6, -2.2, -0.8, 0.6, 2.0, 3.4];
+const CONFIRMATION_LEVEL = 'confirmed';
 
 function Avatar({ spot, priceSol }: { spot: QueueViewSpot; priceSol: number }) {
   const [x, setX] = useState(spot.displayX);
@@ -61,7 +57,7 @@ function Avatar({ spot, priceSol }: { spot: QueueViewSpot; priceSol: number }) {
   );
 }
 
-function QueueScene({ spots, you }: { spots: QueueSpot[]; you?: QueueSpot }) {
+function QueueScene({ spots, you, eventId }: { spots: QueueSpot[]; you?: QueueSpot; eventId: Uint8Array }) {
   const visible = useMemo(() => {
     if (!you) return [] as QueueViewSpot[];
 
@@ -79,7 +75,7 @@ function QueueScene({ spots, you }: { spots: QueueSpot[]; you?: QueueSpot }) {
           createdAt: 0,
           isSelling: false,
           priceLamports: 0n,
-          eventId: EVENT_ID_BYTES,
+          eventId,
           relativeIndex: relative,
           displayX: x,
           isYou: relative === 0,
@@ -93,7 +89,7 @@ function QueueScene({ spots, you }: { spots: QueueSpot[]; you?: QueueSpot }) {
         isYou: source.owner === you.owner,
       };
     });
-  }, [spots, you]);
+  }, [eventId, spots, you]);
 
   return (
     <Canvas camera={{ position: [1.8, 3.3, 7.4], fov: 45 }}>
@@ -105,7 +101,7 @@ function QueueScene({ spots, you }: { spots: QueueSpot[]; you?: QueueSpot }) {
       ))}
       <mesh position={[0, -0.2, 0]} rotation={[-Math.PI / 2, 0, 0]}>
         <planeGeometry args={[13, 3]} />
-        <meshStandardMaterial color="#233348" />
+        <meshStandardMaterial color={COLORS.navy} />
       </mesh>
     </Canvas>
   );
@@ -115,26 +111,52 @@ export default function App() {
   const { connection } = useConnection();
   const wallet = useWallet();
   const [spots, setSpots] = useState<QueueSpot[]>([]);
-  const [joined, setJoined] = useState(false);
+  const [programIdText, setProgramIdText] = useState(PROGRAM_ID);
+  const [eventIdBytes, setEventIdBytes] = useState(EVENT_ID_BYTES);
+  const [qrPayloadInput, setQrPayloadInput] = useState('');
   const [activeTab, setActiveTab] = useState<'buy' | 'sell'>('buy');
   const [balanceSol, setBalanceSol] = useState(0);
   const [sellInput, setSellInput] = useState('0.1');
   const [txStatus, setTxStatus] = useState<string>('');
+  const [buyTarget, setBuyTarget] = useState<QueueSpot | null>(null);
+
+  const programId = useMemo(() => {
+    try {
+      return new PublicKey(programIdText);
+    } catch {
+      return null;
+    }
+  }, [programIdText]);
+  const eventQrPayload = useMemo(
+    () =>
+      JSON.stringify({
+        programId: programIdText,
+        eventId: Array.from(eventIdBytes),
+      }),
+    [eventIdBytes, programIdText],
+  );
 
   const publicKey = wallet.publicKey?.toBase58();
   const yourSpot = spots.find((spot) => spot.owner === publicKey);
-  const listedSpots = spots.filter((spot) => spot.isSelling).sort((a, b) => a.queuePosition - b.queuePosition);
+  const listedSpots = spots
+    .filter((spot) => spot.isSelling && spot.owner !== publicKey)
+    .sort((a, b) => a.queuePosition - b.queuePosition);
 
   useEffect(() => {
+    if (!programId) {
+      setSpots([]);
+      return;
+    }
+
     const load = async () => {
-      const data = await fetchEventSpots(connection, new PublicKey(PROGRAM_ID), EVENT_ID_BYTES);
+      const data = await fetchEventSpots(connection, programId, eventIdBytes);
       setSpots(data);
     };
 
     void load();
     const timer = window.setInterval(() => void load(), 5000);
     return () => window.clearInterval(timer);
-  }, [connection]);
+  }, [connection, eventIdBytes, programId]);
 
   useEffect(() => {
     if (!wallet.publicKey) return;
@@ -145,34 +167,38 @@ export default function App() {
   }, [connection, wallet.publicKey, spots]);
 
   const handleJoin = async () => {
-    if (!wallet.publicKey) return;
-    const programId = new PublicKey(PROGRAM_ID);
+    if (!wallet.publicKey || !programId) return;
 
     try {
       setTxStatus('Submitting mint_spot...');
-      await mintSpotTx(connection, wallet.sendTransaction, wallet.publicKey, programId, EVENT_ID_BYTES);
-      setJoined(true);
+      const signature = await mintSpotTx(connection, wallet.sendTransaction, wallet.publicKey, programId, eventIdBytes);
+      await connection.confirmTransaction(signature, CONFIRMATION_LEVEL);
       setTxStatus('Joined queue successfully.');
     } catch (error) {
       setTxStatus(`Join failed: ${(error as Error).message}`);
+      return;
     }
+
+    const data = await fetchEventSpots(connection, programId, eventIdBytes);
+    setSpots(data);
   };
 
   const handleList = async () => {
-    if (!yourSpot || !wallet.publicKey) return;
+    if (!yourSpot || !wallet.publicKey || !programId) return;
     const priceLamports = solToLamports(Number(sellInput));
     if (priceLamports <= 0n) return;
 
     try {
       setTxStatus('Submitting list_spot...');
-      await listSpotTx(
+      const signature = await listSpotTx(
         connection,
         wallet.sendTransaction,
         wallet.publicKey,
         new PublicKey(yourSpot.pubkey),
-        new PublicKey(PROGRAM_ID),
+        programId,
         priceLamports,
       );
+      await connection.confirmTransaction(signature, CONFIRMATION_LEVEL);
       setTxStatus('Spot listed.');
     } catch (error) {
       setTxStatus(`Listing failed: ${(error as Error).message}`);
@@ -186,20 +212,22 @@ export default function App() {
     );
   };
 
-  const handleBuy = async (target: QueueSpot) => {
-    if (!yourSpot || !wallet.publicKey) return;
+  const handleBuyConfirm = async () => {
+    if (!buyTarget) return;
+    if (!yourSpot || !wallet.publicKey || !programId) return;
 
     try {
-      setTxStatus(`Submitting execute_swap for #${target.queuePosition}...`);
-      await executeSwapTx(
+      setTxStatus(`Submitting execute_swap for #${buyTarget.queuePosition}...`);
+      const signature = await executeSwapTx(
         connection,
         wallet.sendTransaction,
         wallet.publicKey,
-        new PublicKey(target.owner),
+        new PublicKey(buyTarget.owner),
         new PublicKey(yourSpot.pubkey),
-        new PublicKey(target.pubkey),
-        new PublicKey(PROGRAM_ID),
+        new PublicKey(buyTarget.pubkey),
+        programId,
       );
+      await connection.confirmTransaction(signature, CONFIRMATION_LEVEL);
       setTxStatus('Swap complete.');
     } catch (error) {
       setTxStatus(`Swap failed: ${(error as Error).message}`);
@@ -210,16 +238,33 @@ export default function App() {
     setSpots((prev) =>
       prev.map((spot) => {
         if (spot.owner === yourSpot.owner) {
-          return { ...spot, queuePosition: target.queuePosition, isSelling: false, priceLamports: 0n };
+          return { ...spot, queuePosition: buyTarget.queuePosition, isSelling: false, priceLamports: 0n };
         }
 
-        if (spot.owner === target.owner) {
+        if (spot.owner === buyTarget.owner) {
           return { ...spot, queuePosition: oldPosition, isSelling: false, priceLamports: 0n };
         }
 
         return spot;
       }),
     );
+    setBuyTarget(null);
+  };
+
+  const handleApplyQrPayload = () => {
+    try {
+      const parsed = JSON.parse(qrPayloadInput) as { programId: string; eventId: number[] };
+      const nextProgram = new PublicKey(parsed.programId);
+      const nextEvent = Uint8Array.from(parsed.eventId);
+      if (nextEvent.length !== 32) {
+        throw new Error('Event ID must be 32 bytes');
+      }
+      setProgramIdText(nextProgram.toBase58());
+      setEventIdBytes(nextEvent);
+      setTxStatus('Queue context updated from QR payload.');
+    } catch (error) {
+      setTxStatus(`Invalid QR payload: ${(error as Error).message}`);
+    }
   };
 
   return (
@@ -234,14 +279,28 @@ export default function App() {
       </header>
 
       <section className="h-[45vh] min-h-[300px] px-2 pb-2">
-        {!joined && (
+        {!yourSpot && (
           <div className="absolute inset-x-0 top-28 z-20 mx-auto flex w-[90%] max-w-sm flex-col items-center rounded-lg bg-[#CAFFB9] p-4 text-center text-[#2E4057] shadow-lg">
             <p className="mb-3 font-semibold">Scan the event QR code to join the queue.</p>
-            <QRCodeSVG value={EVENT_QR_PAYLOAD} bgColor="#CAFFB9" fgColor="#2E4057" />
+            <QRCodeSVG value={eventQrPayload} bgColor="#CAFFB9" fgColor="#2E4057" />
             <WalletMultiButton className="!mt-4 !h-12 !min-w-[180px] !rounded-md !bg-[#2E4057] !text-[#CAFFB9]" />
+            <textarea
+              value={qrPayloadInput}
+              onChange={(event) => setQrPayloadInput(event.target.value)}
+              placeholder="Paste scanned QR payload JSON"
+              className="mt-3 h-24 w-full rounded-md border border-[#2E4057] bg-[#CAFFB9] p-2 text-xs text-[#2E4057] outline-none"
+            />
+            <button
+              type="button"
+              onClick={handleApplyQrPayload}
+              className="mt-2 h-12 w-full rounded-md border-2 border-[#2E4057] bg-[#CAFFB9] font-semibold text-[#2E4057]"
+            >
+              Apply QR Payload
+            </button>
             <button
               type="button"
               onClick={handleJoin}
+              disabled={!programId}
               className="mt-3 h-12 w-full rounded-md border border-[#2E4057] bg-[#CAFFB9] font-semibold text-[#2E4057]"
             >
               I Scanned - Join Queue
@@ -249,7 +308,7 @@ export default function App() {
             {txStatus && <p className="mt-2 text-xs">{txStatus}</p>}
           </div>
         )}
-        <QueueScene spots={spots} you={yourSpot} />
+        <QueueScene spots={spots} you={yourSpot} eventId={eventIdBytes} />
       </section>
 
       <section className="min-h-[40vh] rounded-t-2xl bg-[#CAFFB9] px-4 py-4 text-[#2E4057]">
@@ -281,7 +340,7 @@ export default function App() {
               <button
                 key={spot.pubkey}
                 type="button"
-                onClick={() => handleBuy(spot)}
+                onClick={() => setBuyTarget(spot)}
                 className="flex h-12 w-full items-center justify-between rounded-md border border-[#2E4057] bg-[#CAFFB9] px-3 text-left font-semibold"
               >
                 <span>#{spot.queuePosition}</span>
@@ -300,7 +359,7 @@ export default function App() {
             </div>
             <label className="block text-sm font-semibold">
               Sell For:
-              <div className="mt-1 flex h-12 items-center rounded-md border border-[#2E4057] bg-white px-3">
+              <div className="mt-1 flex h-12 items-center rounded-md border border-[#2E4057] bg-[#CAFFB9] px-3">
                 <span className="mr-2">$</span>
                 <input
                   value={sellInput}
@@ -328,6 +387,31 @@ export default function App() {
           </div>
         )}
       </section>
+      {buyTarget && (
+        <div className="fixed inset-0 z-40 flex items-end bg-[#2E4057]/80 p-4">
+          <div className="w-full rounded-2xl bg-[#CAFFB9] p-4 text-[#2E4057]">
+            <p className="text-base font-semibold">
+              Buy position #{buyTarget.queuePosition} for ${lamportsToSol(buyTarget.priceLamports).toFixed(2)}?
+            </p>
+            <div className="mt-4 grid grid-cols-2 gap-3">
+              <button
+                type="button"
+                onClick={() => setBuyTarget(null)}
+                className="h-12 rounded-md border-2 border-[#2E4057] bg-[#CAFFB9] font-semibold text-[#2E4057]"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleBuyConfirm}
+                className="h-12 rounded-md bg-[#2E4057] font-semibold text-[#CAFFB9]"
+              >
+                Confirm
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </main>
   );
 }
